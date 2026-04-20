@@ -1,0 +1,14 @@
+# Database Config
+api/config.php
+
+# Version Control
+.DS_Store
+.idea/
+.vscode/
+
+# Node dependencies
+node_modules/
+dist/
+build/
+.env
+.env.local
