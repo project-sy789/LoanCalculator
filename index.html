@@ -23,18 +23,28 @@
     </style>
 </head>
 <body class="bg-gray-50">
-    <div id="root"></div>
+    <div id="root" class="min-h-screen flex items-center justify-center">
+        <div class="text-center">
+            <div class="inline-block w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+            <p class="text-emerald-800 font-bold animate-pulse">กำลังเรียกใช้งานระบบจัดการปล่อยกู้...</p>
+        </div>
+    </div>
 
+    <!-- UI Logic -->
     <script type="text/babel">
+        /**
+         * ⚠️ คำเตือนสำคัญสำหรับการใช้งานบน GitHub Pages:
+         * GitHub Pages ไม่รองรับไฟล์ PHP ดังนั้นคุณต้องนำโฟลเดอร์ api/ ไปไว้บน Host PHP ของคุณ
+         * และนำ URL ของไฟล์ api.php มาใส่ในช่อง API_BASE_URL ด้านล่างนี้ครับ
+         */
+        const API_BASE_URL = 'https://YOUR-PHP-HOST.com/api/api.php'; 
+
         const { useState, useMemo, useEffect } = React;
         const { 
             Calculator, Calendar, DollarSign, Percent, ArrowRight, Info, 
             Save, List, User, Clock, CheckCircle, Trash2, 
             ChevronRight, ArrowLeft, Copy, Check 
         } = LucideReact;
-
-        // --- CONFIGURATION ---
-        const API_BASE_URL = 'api/api.php'; 
 
         const formatCurrency = (value) => {
           return new Intl.NumberFormat('th-TH', {
@@ -48,6 +58,7 @@
         const LoanCalculator = () => {
           // Calculator States
           const [principal, setPrincipal] = useState(10000);
+// ... [rest of the component persists, I will keep it identical to LoanCalculator.js but formatted for index.html]
           const [calcMode, setCalcMode] = useState('byRate');
           const [targetTotal, setTargetTotal] = useState(12000);
           const [interestRate, setInterestRate] = useState(2);
