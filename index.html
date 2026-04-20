@@ -20,626 +20,429 @@
         body { font-family: 'Outfit', 'Sarabun', sans-serif; }
         .scroll-thin::-webkit-scrollbar { width: 4px; }
         .scroll-thin::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 10px; }
+        
+        /* Error Screen Styles */
+        #error-screen {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: #fff1f2;
+            color: #9f1239;
+            padding: 2rem;
+            z-index: 9999;
+            font-family: monospace;
+            overflow: auto;
+        }
     </style>
 </head>
 <body class="bg-gray-50">
+    <!-- Error Overlay -->
+    <div id="error-screen">
+        <h1 style="font-size: 1.5rem; font-weight: bold; margin-bottom: 1rem;">🚫 เกิดข้อผิดพลาดในการโหลดระบบ</h1>
+        <pre id="error-message" style="background: #ffe4e6; padding: 1rem; border-radius: 0.5rem; white-space: pre-wrap;"></pre>
+        <p style="margin-top: 1rem; font-size: 0.8rem; opacity: 0.8;">สาเหตุอาจเกิดจาก Browser ไม่รองรับ หรือสคริปต์บางตัวโหลดไม่สำเร็จ กรุณาลอง Refresh อีกครั้งครับ</p>
+    </div>
+
+    <!-- Loading Placeholder -->
     <div id="root" class="min-h-screen flex items-center justify-center">
         <div class="text-center">
             <div class="inline-block w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-            <p class="text-emerald-800 font-bold animate-pulse">กำลังเรียกใช้งานระบบจัดการปล่อยกู้...</p>
+            <p class="text-emerald-800 font-bold animate-pulse text-xl">กำลังเรียกใช้งานระบบจัดการปล่อยกู้... 🌳</p>
         </div>
     </div>
 
-    <!-- UI Logic -->
     <script type="text/babel">
-        /**
-         * ⚠️ คำเตือนสำคัญสำหรับการใช้งานบน GitHub Pages:
-         * GitHub Pages ไม่รองรับไฟล์ PHP ดังนั้นคุณต้องนำโฟลเดอร์ api/ ไปไว้บน Host PHP ของคุณ
-         * และนำ URL ของไฟล์ api.php มาใส่ในช่อง API_BASE_URL ด้านล่างนี้ครับ
-         */
-        const API_BASE_URL = 'https://YOUR-PHP-HOST.com/api/api.php'; 
+        // Global Error Handler for React
+        window.addEventListener('error', (event) => {
+            document.getElementById('error-screen').style.display = 'block';
+            document.getElementById('error-message').textContent = event.error ? event.error.stack : event.message;
+        });
 
-        const { useState, useMemo, useEffect } = React;
-        const { 
-            Calculator, Calendar, DollarSign, Percent, ArrowRight, Info, 
-            Save, List, User, Clock, CheckCircle, Trash2, 
-            ChevronRight, ArrowLeft, Copy, Check 
-        } = LucideReact;
-
-        const formatCurrency = (value) => {
-          return new Intl.NumberFormat('th-TH', {
-            style: 'currency',
-            currency: 'THB',
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          }).format(value).replace('฿', '');
-        };
-
-        const LoanCalculator = () => {
-          // Calculator States
-          const [principal, setPrincipal] = useState(10000);
-// ... [rest of the component persists, I will keep it identical to LoanCalculator.js but formatted for index.html]
-          const [calcMode, setCalcMode] = useState('byRate');
-          const [targetTotal, setTargetTotal] = useState(12000);
-          const [interestRate, setInterestRate] = useState(2);
-          const [rateUnit, setRateUnit] = useState('month');
-          const [duration, setDuration] = useState(12);
-          const [durationUnit, setDurationUnit] = useState('month');
-          const [loanType, setLoanType] = useState('flat');
-
-          // Saving States
-          const [borrowerName, setBorrowerName] = useState('');
-          const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-          const [paymentTime, setPaymentTime] = useState('20:30');
-          
-          // UI States
-          const [view, setView] = useState('calculator'); 
-          const [savedLoans, setSavedLoans] = useState([]);
-          const [selectedLoan, setSelectedLoan] = useState(null);
-          const [loading, setLoading] = useState(false);
-          const [copying, setCopying] = useState(false);
-
-          // Finance States
-          const [financeSummary, setFinanceSummary] = useState(null);
-          const [transactions, setTransactions] = useState([]);
-          const [newTrans, setNewTrans] = useState({ type: 'expense', category: 'ค่าน้ำมัน', amount: '', description: '', date: new Date().toISOString().split('T')[0] });
-
-          // --- API FUNCTIONS ---
-
-          const fetchLoans = async () => {
-            setLoading(true);
-            try {
-              const resp = await fetch(`${API_BASE_URL}?action=get_loans`);
-              const data = await resp.json();
-              if (Array.isArray(data)) setSavedLoans(data);
-            } catch (err) {
-              console.error("Fetch failed", err);
-            } finally {
-              setLoading(false);
-            }
-          };
-
-          const fetchFinanceData = async () => {
-            setLoading(true);
-            try {
-              const [sumResp, transResp] = await Promise.all([
-                fetch(`${API_BASE_URL}?action=get_finance_summary`),
-                fetch(`${API_BASE_URL}?action=get_transactions`)
-              ]);
-              const sumData = await sumResp.json();
-              const transData = await transResp.json();
-              setFinanceSummary(sumData);
-              setTransactions(Array.isArray(transData) ? transData : []);
-            } catch (err) {
-              console.error(err);
-            } finally {
-              setLoading(false);
-            }
-          };
-
-          const handleSaveLoan = async () => {
-            if (!borrowerName || !results) return;
-            setLoading(true);
-            try {
-              const payload = {
-                borrower_name: borrowerName,
-                principal: results.p,
-                loan_type: loanType,
-                duration: duration,
-                duration_unit: durationUnit,
-                pmt_amount: results.pmt,
-                interest_rate: results.calculatedRateDisplay,
-                start_date: startDate,
-                payment_time: paymentTime,
-                total_payment: results.totalPayment,
-                schedule: results.schedule.map(s => ({ ...s, date: startDate }))
-              };
-
-              const resp = await fetch(`${API_BASE_URL}?action=save_loan`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-              });
-              const res = await resp.json();
-              alert(res.message);
-              if (res.loan_id) {
-                setView('dashboard');
-                fetchLoans();
-              }
-            } catch (err) {
-              alert("Error saving: " + err.message);
-            } finally {
-              setLoading(false);
-            }
-          };
-
-          const loadLoanDetails = async (id) => {
-            setLoading(true);
-            try {
-              const resp = await fetch(`${API_BASE_URL}?action=get_loan_details&id=${id}`);
-              const data = await resp.json();
-              setSelectedLoan(data);
-              setView('tracker');
-            } catch (err) {
-              console.error(err);
-            } finally {
-              setLoading(false);
-            }
-          };
-
-          const togglePayment = async (paymentId, currentStatus) => {
-            const newStatus = currentStatus === 1 ? 0 : 1;
-            try {
-              const resp = await fetch(`${API_BASE_URL}?action=update_payment`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ payment_id: paymentId, status: newStatus })
-              });
-              const res = await resp.json();
-              if (res.message) {
-                setSelectedLoan(prev => ({
-                  ...prev,
-                  schedule: prev.schedule.map(p => p.id === paymentId ? { ...p, status: newStatus } : p)
-                }));
-              }
-            } catch (err) {
-              console.error(err);
-            }
-          };
-
-          const deleteLoan = async (id) => {
-            if (!window.confirm("ยืนยันการลบข้อมูล?")) return;
-            try {
-              await fetch(`${API_BASE_URL}?action=delete_loan&id=${id}`);
-              fetchLoans();
-            } catch (err) {
-              console.error(err);
-            }
-          };
-
-          const handleAddTransaction = async () => {
-            if (!newTrans.amount) return;
-            try {
-              const resp = await fetch(`${API_BASE_URL}?action=add_transaction`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  type: newTrans.type,
-                  category: newTrans.category,
-                  amount: newTrans.amount,
-                  description: newTrans.description,
-                  transaction_date: newTrans.date
-                })
-              });
-              const res = await resp.json();
-              if (res.message) {
-                fetchFinanceData();
-                setNewTrans({ ...newTrans, amount: '', description: '' });
-              }
-            } catch (err) {
-              console.error(err);
-            }
-          };
-
-          useEffect(() => {
-            if (view === 'dashboard') fetchLoans();
-            if (view === 'finance') fetchFinanceData();
-          }, [view]);
-
-          // --- CALCULATION LOGIC ---
-
-          const results = useMemo(() => {
-            let p = parseFloat(principal) || 0;
-            let rate = parseFloat(interestRate) || 0;
-            let targetPmtTotal = parseFloat(targetTotal) || 0;
-            let n = parseInt(duration) || 0;
-
-            if (p <= 0 || n <= 0) return null;
-
-            let yearlyRate = 0;
-            let calculatedRateDisplay = 0;
-
-            if (calcMode === 'byTotal') {
-              if (targetPmtTotal < p) return null;
-              let totalI = targetPmtTotal - p;
-              let rPerPeriod = 0;
-
-              if (loanType === 'flat' || loanType === 'float') {
-                rPerPeriod = totalI / (p * n);
-              } else if (loanType === 'effective') {
-                if (totalI === 0) rPerPeriod = 0;
-                else {
-                  let pmt = targetPmtTotal / n;
-                  let low = 0.0, high = 10.0, r = 0;
-                  for (let i = 0; i < 40; i++) {
-                    r = (low + high) / 2;
-                    let currentPmt = (p * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
-                    if (currentPmt > pmt) high = r; else low = r;
-                  }
-                  rPerPeriod = r;
+        try {
+            const { useState, useMemo, useEffect } = React;
+            
+            // Safe Icon Fetcher
+            const getIcon = (name) => {
+                if (window.LucideReact && window.LucideReact[name]) {
+                    return window.LucideReact[name];
                 }
-              }
-
-              if (durationUnit === 'day') yearlyRate = rPerPeriod * 100 * 365;
-              else if (durationUnit === 'month') yearlyRate = rPerPeriod * 100 * 12;
-              else if (durationUnit === 'year') yearlyRate = rPerPeriod * 100;
-
-              if (rateUnit === 'day') calculatedRateDisplay = yearlyRate / 365;
-              else if (rateUnit === 'month') calculatedRateDisplay = yearlyRate / 12;
-              else if (rateUnit === 'year') calculatedRateDisplay = yearlyRate;
-
-            } else {
-              if (rateUnit === 'day') yearlyRate = rate * 365;
-              else if (rateUnit === 'month') yearlyRate = rate * 12;
-              else if (rateUnit === 'year') yearlyRate = rate;
-              calculatedRateDisplay = rate;
-            }
-
-            let rPerPeriod = 0;
-            if (durationUnit === 'day') rPerPeriod = yearlyRate / 365 / 100;
-            else if (durationUnit === 'month') rPerPeriod = yearlyRate / 12 / 100;
-            else if (durationUnit === 'year') rPerPeriod = yearlyRate / 100;
-
-            let schedule = [];
-            let totalInterest = 0;
-            let totalPayment = 0;
-            let pmtValue = 0;
-
-            if (loanType === 'float') {
-              let interestPerPeriod = p * rPerPeriod;
-              pmtValue = interestPerPeriod;
-              totalInterest = interestPerPeriod * n;
-              totalPayment = p + totalInterest;
-              for (let i = 1; i <= n; i++) {
-                let principalPaid = i === n ? p : 0;
-                schedule.push({ period: i, payment: interestPerPeriod + principalPaid, principal: principalPaid, interest: interestPerPeriod, balance: i === n ? 0 : p });
-              }
-            } else if (loanType === 'flat') {
-              totalInterest = p * rPerPeriod * n;
-              totalPayment = p + totalInterest;
-              pmtValue = totalPayment / n;
-              let principalPerPeriod = p / n, interestPerPeriod = totalInterest / n, balance = p;
-              for (let i = 1; i <= n; i++) {
-                balance -= principalPerPeriod;
-                schedule.push({ period: i, payment: pmtValue, principal: principalPerPeriod, interest: interestPerPeriod, balance: Math.max(0, balance) });
-              }
-            } else if (loanType === 'effective') {
-              if (rPerPeriod === 0) { pmtValue = p / n; totalInterest = 0; }
-              else { pmtValue = (p * rPerPeriod * Math.pow(1 + rPerPeriod, n)) / (Math.pow(1 + rPerPeriod, n) - 1); }
-              let balance = p;
-              for (let i = 1; i <= n; i++) {
-                let interest = balance * rPerPeriod;
-                let principalPaid = pmtValue - interest;
-                if (i === n) { principalPaid = balance; pmtValue = principalPaid + interest; }
-                balance -= principalPaid;
-                totalInterest += interest;
-                schedule.push({ period: i, payment: pmtValue, principal: principalPaid, interest: interest, balance: Math.max(0, balance) });
-              }
-              totalPayment = p + totalInterest;
-            }
-
-            return { pmt: pmtValue, totalInterest, totalPayment, schedule, p, calculatedRateDisplay };
-          }, [principal, interestRate, rateUnit, duration, durationUnit, loanType, calcMode, targetTotal]);
-
-          const generateCopyText = (loan) => {
-            if (!loan && !results) return '';
-            const l = loan || { 
-              start_date: startDate, 
-              pmt_amount: results.pmt, 
-              principal: results.p, 
-              total_payment: results.totalPayment,
-              duration_unit: durationUnit,
-              payment_time: paymentTime,
-              borrower_name: borrowerName,
-              schedule: results.schedule
+                // Fallback to simple circle if icon not found
+                return () => <span>●</span>;
             };
 
-            const dateStr = new Date(l.start_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
-            const pmtFormatted = parseFloat(l.pmt_amount).toLocaleString();
-            const periodLabel = l.duration_unit === 'day' ? 'วัน' : 'งวด';
-            
-            let text = `🌳ต้น ${parseFloat(l.principal).toLocaleString()}🌳 ${dateStr}\n\n`;
-            text += `🌼${pmtFormatted}/${periodLabel}🌼\n`;
-            text += `.........................................\n\n`;
-            
-            const sched = l.schedule;
-            sched.forEach((row) => {
-              const statusIcon = row.status == 1 ? '✅' : '📍';
-              text += `${row.period_num || row.period} ${statusIcon} \n`;
-            });
+            const Calculator = getIcon('Calculator');
+            const Calendar = getIcon('Calendar');
+            const DollarSign = getIcon('DollarSign');
+            const Percent = getIcon('Percent');
+            const ArrowRight = getIcon('ArrowRight');
+            const Info = getIcon('Info');
+            const Save = getIcon('Save');
+            const List = getIcon('List');
+            const User = getIcon('User');
+            const Clock = getIcon('Clock');
+            const CheckCircle = getIcon('CheckCircle');
+            const Trash2 = getIcon('Trash2');
+            const ChevronRight = getIcon('ChevronRight');
+            const ArrowLeft = getIcon('ArrowLeft');
+            const Copy = getIcon('Copy');
+            const Check = getIcon('Check');
+            const XCircle = getIcon('XCircle');
 
-            text += `\n.........................................\n`;
-            text += `รวมยอด ${parseFloat(l.total_payment).toLocaleString()} 💸\n\n`;
-            text += `🕑ส่งยอด${l.payment_time} ทุกวัน\n`;
-            text += `${l.borrower_name || 'ชื่อผู้กู้'}`;
-            
-            return text;
-          };
+            // --- CONFIGURATION ---
+            // ⚠️ สำคัญ: ต้องเปลี่ยนเป็น URL ของ Host PHP ของคุณครับ
+            const API_BASE_URL = 'https://YOUR-PHP-HOST.com/api/api.php'; 
 
-          const handleCopy = () => {
-            const text = generateCopyText(selectedLoan);
-            navigator.clipboard.writeText(text);
-            setCopying(true);
-            setTimeout(() => setCopying(false), 2000);
-          };
+            const formatCurrency = (value) => {
+              return new Intl.NumberFormat('th-TH', {
+                style: 'currency', currency: 'THB', minimumFractionDigits: 2, maximumFractionDigits: 2,
+              }).format(value).replace('฿', '');
+            };
 
-          // --- RENDERING COMPONENTS ---
+            const LoanCalculatorApp = () => {
+              // Calculator States
+              const [principal, setPrincipal] = useState(10000);
+              const [calcMode, setCalcMode] = useState('byRate');
+              const [targetTotal, setTargetTotal] = useState(12000);
+              const [interestRate, setInterestRate] = useState(2);
+              const [rateUnit, setRateUnit] = useState('month');
+              const [duration, setDuration] = useState(12);
+              const [durationUnit, setDurationUnit] = useState('month');
+              const [loanType, setLoanType] = useState('flat');
 
-          const Header = () => (
-            <div className="bg-gradient-to-br from-emerald-600 to-teal-800 rounded-3xl p-8 md:p-12 shadow-2xl text-white relative overflow-hidden mb-8">
-              <div className="absolute top-0 right-0 p-8 opacity-10"><Calculator size={160} /></div>
-              <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
-                <div className="flex items-center gap-5">
-                  <div className="bg-white/20 backdrop-blur-md p-4 rounded-2xl shadow-inner"><Calculator size={40} /></div>
-                  <div>
-                    <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">🌳 ระบบจัดการปล่อยกู้</h1>
-                    <p className="text-emerald-100 mt-2 font-medium italic">บันทึก ติดตาม และคุมยอดอย่างมืออาชีพ</p>
+              // Saving States
+              const [borrowerName, setBorrowerName] = useState('');
+              const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+              const [paymentTime, setPaymentTime] = useState('20:30');
+              
+              // UI States
+              const [view, setView] = useState('calculator'); 
+              const [savedLoans, setSavedLoans] = useState([]);
+              const [selectedLoan, setSelectedLoan] = useState(null);
+              const [loading, setLoading] = useState(false);
+              const [copying, setCopying] = useState(false);
+
+              // Finance States
+              const [financeSummary, setFinanceSummary] = useState(null);
+              const [transactions, setTransactions] = useState([]);
+              const [newTrans, setNewTrans] = useState({ type: 'expense', category: 'ค่าน้ำมัน', amount: '', description: '', date: new Date().toISOString().split('T')[0] });
+
+              // API Actions
+              const fetchLoans = async () => {
+                setLoading(true);
+                try {
+                  const resp = await fetch(`${API_BASE_URL}?action=get_loans`);
+                  const data = await resp.json();
+                  if (Array.isArray(data)) setSavedLoans(data);
+                } catch (err) { console.error(err); } finally { setLoading(false); }
+              };
+
+              const fetchFinanceData = async () => {
+                setLoading(true);
+                try {
+                  const [sumResp, transResp] = await Promise.all([
+                    fetch(`${API_BASE_URL}?action=get_finance_summary`),
+                    fetch(`${API_BASE_URL}?action=get_transactions`)
+                  ]);
+                  const sumData = await sumResp.json();
+                  const transData = await transResp.json();
+                  setFinanceSummary(sumData);
+                  setTransactions(Array.isArray(transData) ? transData : []);
+                } catch (err) { console.error(err); } finally { setLoading(false); }
+              };
+
+              const handleSaveLoan = async () => {
+                if (!borrowerName || !results) return;
+                setLoading(true);
+                try {
+                  const payload = {
+                    borrower_name: borrowerName, principal: results.p, loan_type: loanType,
+                    duration: duration, duration_unit: durationUnit, pmt_amount: results.pmt,
+                    interest_rate: results.calculatedRateDisplay, start_date: startDate,
+                    payment_time: paymentTime, total_payment: results.totalPayment,
+                    schedule: results.schedule.map(s => ({ ...s, date: startDate }))
+                  };
+                  const resp = await fetch(`${API_BASE_URL}?action=save_loan`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+                  });
+                  const res = await resp.json();
+                  alert(res.message);
+                  if (res.loan_id) { setView('dashboard'); fetchLoans(); }
+                } catch (err) { alert("Error: " + err.message); } finally { setLoading(false); }
+              };
+
+              const loadLoanDetails = async (id) => {
+                setLoading(true);
+                try {
+                  const resp = await fetch(`${API_BASE_URL}?action=get_loan_details&id=${id}`);
+                  const data = await resp.json();
+                  setSelectedLoan(data); setView('tracker');
+                } catch (err) { console.error(err); } finally { setLoading(false); }
+              };
+
+              const togglePayment = async (paymentId, currentStatus) => {
+                const newStatus = currentStatus === 1 ? 0 : 1;
+                try {
+                  const resp = await fetch(`${API_BASE_URL}?action=update_payment`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_id: paymentId, status: newStatus })
+                  });
+                  const res = await resp.json();
+                  if (res.message) {
+                    setSelectedLoan(prev => ({
+                      ...prev, schedule: prev.schedule.map(p => p.id === paymentId ? { ...p, status: newStatus } : p)
+                    }));
+                  }
+                } catch (err) { console.error(err); }
+              };
+
+              const deleteLoan = async (id) => {
+                if (!window.confirm("ยืนยันการลบ?")) return;
+                try { await fetch(`${API_BASE_URL}?action=delete_loan&id=${id}`); fetchLoans(); } catch (err) { console.error(err); }
+              };
+
+              const handleAddTransaction = async () => {
+                if (!newTrans.amount) return;
+                try {
+                  const resp = await fetch(`${API_BASE_URL}?action=add_transaction`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: newTrans.type, category: newTrans.category, amount: newTrans.amount, description: newTrans.description, transaction_date: newTrans.date })
+                  });
+                  const res = await resp.json();
+                  if (res.message) { fetchFinanceData(); setNewTrans({ ...newTrans, amount: '', description: '' }); }
+                } catch (err) { console.error(err); }
+              };
+
+              useEffect(() => {
+                if (view === 'dashboard') fetchLoans();
+                if (view === 'finance') fetchFinanceData();
+              }, [view]);
+
+              // Calculation Logic
+              const results = useMemo(() => {
+                let p = parseFloat(principal) || 0, rate = parseFloat(interestRate) || 0, targetPmtTotal = parseFloat(targetTotal) || 0, n = parseInt(duration) || 0;
+                if (p <= 0 || n <= 0) return null;
+                let yearlyRate = 0, calculatedRateDisplay = 0;
+                if (calcMode === 'byTotal') {
+                  if (targetPmtTotal < p) return null;
+                  let totalI = targetPmtTotal - p, rPerPeriod = 0;
+                  if (loanType === 'flat' || loanType === 'float') { rPerPeriod = totalI / (p * n); } 
+                  else if (loanType === 'effective') {
+                    if (totalI === 0) rPerPeriod = 0;
+                    else {
+                      let pmt = targetPmtTotal / n, low = 0.0, high = 10.0, r = 0;
+                      for (let i = 0; i < 40; i++) { r = (low + high) / 2; let currentPmt = (p * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1); if (currentPmt > pmt) high = r; else low = r; }
+                      rPerPeriod = r;
+                    }
+                  }
+                  if (durationUnit === 'day') yearlyRate = rPerPeriod * 100 * 365; else if (durationUnit === 'month') yearlyRate = rPerPeriod * 100 * 12; else if (durationUnit === 'year') yearlyRate = rPerPeriod * 100;
+                  if (rateUnit === 'day') calculatedRateDisplay = yearlyRate / 365; else if (rateUnit === 'month') calculatedRateDisplay = yearlyRate / 12; else if (rateUnit === 'year') calculatedRateDisplay = yearlyRate;
+                } else {
+                  if (rateUnit === 'day') yearlyRate = rate * 365; else if (rateUnit === 'month') yearlyRate = rate * 12; else if (rateUnit === 'year') yearlyRate = rate;
+                  calculatedRateDisplay = rate;
+                }
+                let rPerPeriod = 0;
+                if (durationUnit === 'day') rPerPeriod = yearlyRate / 365 / 100; else if (durationUnit === 'month') rPerPeriod = yearlyRate / 12 / 100; else if (durationUnit === 'year') rPerPeriod = yearlyRate / 100;
+                let schedule = [], totalInterest = 0, totalPayment = 0, pmtValue = 0;
+                if (loanType === 'float') {
+                  let interestPerPeriod = p * rPerPeriod; pmtValue = interestPerPeriod; totalInterest = interestPerPeriod * n; totalPayment = p + totalInterest;
+                  for (let i = 1; i <= n; i++) { let principalPaid = i === n ? p : 0; schedule.push({ period: i, payment: interestPerPeriod + principalPaid, principal: principalPaid, interest: interestPerPeriod, balance: i === n ? 0 : p }); }
+                } else if (loanType === 'flat') {
+                  totalInterest = p * rPerPeriod * n; totalPayment = p + totalInterest; pmtValue = totalPayment / n;
+                  let principalPerPeriod = p / n, interestPerPeriod = totalInterest / n, balance = p;
+                  for (let i = 1; i <= n; i++) { balance -= principalPerPeriod; schedule.push({ period: i, payment: pmtValue, principal: principalPerPeriod, interest: interestPerPeriod, balance: Math.max(0, balance) }); }
+                } else if (loanType === 'effective') {
+                  if (rPerPeriod === 0) { pmtValue = p / n; totalInterest = 0; }
+                  else { pmtValue = (p * rPerPeriod * Math.pow(1 + rPerPeriod, n)) / (Math.pow(1 + rPerPeriod, n) - 1); }
+                  let balance = p;
+                  for (let i = 1; i <= n; i++) {
+                    let interest = balance * rPerPeriod, principalPaid = pmtValue - interest;
+                    if (i === n) { principalPaid = balance; pmtValue = principalPaid + interest; }
+                    balance -= principalPaid; totalInterest += interest;
+                    schedule.push({ period: i, payment: pmtValue, principal: principalPaid, interest: interest, balance: Math.max(0, balance) });
+                  }
+                  totalPayment = p + totalInterest;
+                }
+                return { pmt: pmtValue, totalInterest, totalPayment, schedule, p, calculatedRateDisplay };
+              }, [principal, interestRate, rateUnit, duration, durationUnit, loanType, calcMode, targetTotal]);
+
+              const generateCopyText = (loan) => {
+                if (!loan && !results) return '';
+                const l = loan || { start_date: startDate, pmt_amount: results.pmt, principal: results.p, total_payment: results.totalPayment, duration_unit: durationUnit, payment_time: paymentTime, borrower_name: borrowerName, schedule: results.schedule };
+                const dateStr = new Date(l.start_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
+                const pmtFormatted = parseFloat(l.pmt_amount).toLocaleString();
+                const periodLabel = l.duration_unit === 'day' ? 'วัน' : 'งวด';
+                let text = `🌳ต้น ${parseFloat(l.principal).toLocaleString()}🌳 ${dateStr}\n\n🌼${pmtFormatted}/${periodLabel}🌼\n.........................................\n\n`;
+                l.schedule.forEach(row => { text += `${row.period_num || row.period} ${row.status == 1 ? '✅' : '📍'} \n`; });
+                text += `\n.........................................\nรวมยอด ${parseFloat(l.total_payment).toLocaleString()} 💸\n\n🕑ส่งยอด${l.payment_time} ทุกวัน\n${l.borrower_name || 'ชื่อผู้กู้'}`;
+                return text;
+              };
+
+              const handleCopy = () => {
+                navigator.clipboard.writeText(generateCopyText(selectedLoan));
+                setCopying(true); setTimeout(() => setCopying(false), 2000);
+              };
+
+              // Sub-Components
+              const Header = () => (
+                <div className="bg-gradient-to-br from-emerald-600 to-teal-800 rounded-3xl p-8 md:p-12 shadow-2xl text-white relative overflow-hidden mb-8">
+                  <div className="absolute top-0 right-0 p-8 opacity-10"><Calculator size={160} /></div>
+                  <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
+                    <div className="flex items-center gap-5">
+                      <div className="bg-white/20 backdrop-blur-md p-4 rounded-2xl shadow-inner"><Calculator size={40} /></div>
+                      <div><h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">🌳 ระบบจัดการปล่อยกู้</h1><p className="text-emerald-100 mt-2 font-medium italic">บันทึก ติดตาม และคุมยอดอย่างมืออาชีพ</p></div>
+                    </div>
+                    <nav className="flex bg-black/20 p-1 rounded-2xl backdrop-blur-sm">
+                      <button onClick={() => setView('calculator')} className={`px-5 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 ${view === 'calculator' ? 'bg-white text-emerald-800 shadow-lg' : 'text-white hover:bg-white/10'}`}><Calculator size={18} /> คำนวณ</button>
+                      <button onClick={() => setView('dashboard')} className={`px-5 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 ${view === 'dashboard' ? 'bg-white text-emerald-800 shadow-lg' : 'text-white hover:bg-white/10'}`}><List size={18} /> รายการ</button>
+                      <button onClick={() => setView('finance')} className={`px-5 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 ${view === 'finance' ? 'bg-white text-emerald-800 shadow-lg' : 'text-white hover:bg-white/10'}`}><DollarSign size={18} /> บัญชี</button>
+                    </nav>
                   </div>
                 </div>
-                <div className="flex gap-3">
-                  <nav className="flex bg-black/20 p-1 rounded-2xl backdrop-blur-sm">
-                    <button onClick={() => setView('calculator')} className={`px-5 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 ${view === 'calculator' ? 'bg-white text-emerald-800 shadow-lg' : 'text-white hover:bg-white/10'}`}>
-                      <Calculator size={18} /> คำนวณ
-                    </button>
-                    <button onClick={() => setView('dashboard')} className={`px-5 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 ${view === 'dashboard' ? 'bg-white text-emerald-800 shadow-lg' : 'text-white hover:bg-white/10'}`}>
-                      <List size={18} /> รายการ
-                    </button>
-                    <button onClick={() => setView('finance')} className={`px-5 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 ${view === 'finance' ? 'bg-white text-emerald-800 shadow-lg' : 'text-white hover:bg-white/10'}`}>
-                      <DollarSign size={18} /> บัญชี
-                    </button>
-                  </nav>
-                </div>
-              </div>
-            </div>
-          );
+              );
 
-          return (
-            <div className="min-h-screen bg-[#f1f5f9] p-4 md:p-8 font-sans text-slate-800">
-              <div className="max-w-6xl mx-auto">
-                <Header />
-
-                {view === 'calculator' && (
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    <div className="lg:col-span-1 bg-white rounded-3xl shadow-xl border border-emerald-50 p-8 space-y-6 h-fit">
-                      <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2 border-b border-gray-100 pb-4">
-                        <span className="text-emerald-600">📝</span> ข้อมูลผู้กู้
-                      </h2>
-                      
-                      <div className="space-y-4">
-                        <div className="space-y-1">
-                          <label className="text-xs font-black text-gray-400 uppercase flex items-center gap-2"><User size={12}/> ชื่อผู้กู้</label>
-                          <input type="text" value={borrowerName} onChange={(e) => setBorrowerName(e.target.value)} className="w-full px-5 py-4 rounded-2xl border-2 border-gray-100 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all font-bold" placeholder="ระบุชื่อ (เช่น Steve Jobs)"/>
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-xs font-black text-gray-400 uppercase flex items-center gap-2"><DollarSign size={12}/> ยอดเงินกู้</label>
-                          <input type="number" value={principal} onChange={(e) => setPrincipal(e.target.value)} className="w-full px-5 py-4 rounded-2xl border-2 border-gray-100 focus:border-emerald-500 bg-emerald-50/20 outline-none transition-all font-black text-2xl text-emerald-700"/>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-1">
-                            <label className="text-xs font-black text-gray-400 uppercase flex items-center gap-2"><Calendar size={12}/> ระยะเวลา</label>
-                            <div className="flex">
-                              <input type="number" value={duration} onChange={(e) => setDuration(e.target.value)} className="w-1/2 px-4 py-4 rounded-l-2xl border-2 border-gray-100 focus:border-emerald-500 outline-none font-bold"/>
-                              <select value={durationUnit} onChange={(e) => setDurationUnit(e.target.value)} className="w-1/2 px-2 py-4 rounded-r-2xl border-2 border-l-0 border-gray-100 bg-gray-50 outline-none font-bold text-gray-600">
-                                <option value="day">วัน</option><option value="month">เดือน</option><option value="year">ปี</option>
-                              </select>
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-black text-gray-400 uppercase flex items-center gap-2"><Clock size={12}/> ส่งยอด</label>
-                            <input type="time" value={paymentTime} onChange={(e) => setPaymentTime(e.target.value)} className="w-full px-4 py-4 rounded-2xl border-2 border-gray-100 focus:border-emerald-500 outline-none font-bold"/>
-                          </div>
-                        </div>
-
-                        <div className="space-y-3 pt-4 border-t border-gray-50">
-                           <button onClick={handleSaveLoan} disabled={!borrowerName || !results} className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black text-xl shadow-lg hover:shadow-emerald-500/20 hover:-translate-y-1 transition-all disabled:opacity-30 disabled:translate-y-0 active:scale-95 flex items-center justify-center gap-3">
-                            <Save size={24}/> บันทึกปล่อยกู้
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="lg:col-span-2 space-y-8">
-                      {results ? (
-                        <>
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div className="bg-white rounded-[2rem] p-6 shadow-xl border border-emerald-50 text-center">
-                              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">ยอดส่ง/งวด</p>
-                              <p className="text-3xl font-black text-emerald-600">฿{formatCurrency(results.pmt)}</p>
-                            </div>
-                            <div className="bg-white rounded-[2rem] p-6 shadow-xl border border-orange-50 text-center">
-                              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">ดอกรวม</p>
-                              <p className="text-3xl font-black text-orange-500">฿{formatCurrency(results.totalInterest)}</p>
-                            </div>
-                            <div className="bg-white rounded-[2rem] p-6 shadow-xl border border-blue-50 text-center">
-                              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">รวมต้นดอก</p>
-                              <p className="text-3xl font-black text-blue-600">฿{formatCurrency(results.totalPayment)}</p>
-                            </div>
-                          </div>
-
-                          <div className="bg-slate-900 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden">
-                            <div className="flex justify-between items-center mb-6">
-                              <div className="flex items-center gap-2 bg-emerald-500/10 px-4 py-2 rounded-full border border-emerald-500/20">
-                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                                <span className="text-emerald-400 text-xs font-black uppercase">Live Format Preview</span>
-                              </div>
-                              <button onClick={handleCopy} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white px-4 py-2 rounded-xl transition-all">
-                                {copying ? <Check size={16} className="text-emerald-400"/> : <Copy size={16}/>}
-                                <span className="font-bold text-xs">{copying ? 'คัดลอกแล้ว!' : 'คัดลอกข้อความ'}</span>
-                              </button>
-                            </div>
-                            <div className="bg-black/30 rounded-3xl p-8 font-mono text-slate-300 leading-relaxed border border-white/5 max-h-[300px] overflow-y-auto whitespace-pre-wrap scroll-thin">
-                              {generateCopyText()}
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="bg-white/50 border-4 border-dashed border-gray-200 rounded-[3rem] h-[400px] flex flex-col items-center justify-center text-gray-400">
-                          <Calculator size={64} className="opacity-10 mb-4"/>
-                          <p className="font-bold">กรอกข้อมูลเพื่อคำนวณและพรีวิว</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {view === 'dashboard' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4">
-                    {loading ? (
-                      <div className="col-span-full py-20 text-center text-gray-400 font-bold">กำลังโหลดข้อมูล...</div>
-                    ) : savedLoans.length === 0 ? (
-                      <div className="col-span-full bg-white rounded-[3rem] py-20 text-center border-4 border-dashed border-gray-100">
-                        <List size={64} className="mx-auto opacity-10 mb-4"/>
-                        <p className="text-xl font-bold text-gray-300">ไม่พบรายการที่บันทึกไว้</p>
-                      </div>
-                    ) : (
-                      savedLoans.map(loan => (
-                        <div key={loan.id} className="bg-white rounded-[2.5rem] shadow-xl hover:shadow-2xl transition-all p-8 border border-gray-50 flex flex-col group relative overflow-hidden">
-                          <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-50 rounded-full -mr-8 -mt-8 group-hover:scale-150 transition-transform duration-500"></div>
-                          <div className="relative z-10 flex justify-between items-start mb-6">
-                            <div>
-                              <h3 className="text-2xl font-black text-gray-800 tracking-tight">{loan.borrower_name}</h3>
-                              <p className="text-xs font-bold text-emerald-600/60 uppercase tracking-widest mt-1">
-                                {new Date(loan.start_date).toLocaleDateString('th-TH', { month: 'short', day: 'numeric', year: 'numeric' })}
-                              </p>
-                            </div>
-                            <button onClick={() => deleteLoan(loan.id)} className="p-3 text-red-100 hover:text-red-500 transition-colors"><Trash2 size={20}/></button>
-                          </div>
-                          <div className="relative z-10 bg-gray-50 rounded-2xl p-4 mb-6 grid grid-cols-2 gap-4">
-                            <div>
-                              <p className="text-[10px] font-black text-gray-400 uppercase">ต้นทุน</p>
-                              <p className="font-black text-emerald-700">฿{parseFloat(loan.principal).toLocaleString()}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-black text-gray-400 uppercase">ส่งต่องวด</p>
-                              <p className="font-black text-blue-600">฿{parseFloat(loan.pmt_amount).toLocaleString()}</p>
-                            </div>
-                          </div>
-                          <button onClick={() => loadLoanDetails(loan.id)} className="relative z-10 w-full bg-slate-900 group-hover:bg-emerald-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 transition-all">
-                            จัดการยอดส่ง <ChevronRight size={18}/>
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                )}
-
-                {view === 'tracker' && selectedLoan && (
-                  <div className="space-y-8 animate-in zoom-in-95 duration-300">
-                    <button onClick={() => setView('dashboard')} className="flex items-center gap-2 font-black text-gray-400 hover:text-emerald-600 transition-colors font-bold"><ArrowLeft size={20}/> กลับไปหน้ารายการ</button>
+              return (
+                <div className="max-w-6xl mx-auto p-4 md:p-8">
+                  <Header />
+                  {view === 'calculator' && (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                      <div className="lg:col-span-1 space-y-6">
-                        <div className="bg-white rounded-[3rem] shadow-2xl p-8 border border-emerald-50">
-                          <div className="text-center mb-8">
-                            <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-600"><User size={48}/></div>
-                            <h2 className="text-3xl font-black text-gray-800">{selectedLoan.borrower_name}</h2>
-                            <p className="text-emerald-500 font-bold">🌳 ลูกหนี้ชั้นดี</p>
-                          </div>
-                          <div className="space-y-3 bg-gray-50 rounded-[2rem] p-6 text-sm">
-                            <div className="flex justify-between border-b border-gray-200 pb-2"><span className="font-bold text-gray-400">เริ่มสัญญา</span><span className="font-black text-gray-700">{new Date(selectedLoan.start_date).toLocaleDateString('th-TH')}</span></div>
-                            <div className="flex justify-between border-b border-gray-200 pb-2"><span className="font-bold text-gray-400">เงินต้น</span><span className="font-black text-gray-700">฿{parseFloat(selectedLoan.principal).toLocaleString()}</span></div>
-                            <div className="flex justify-between border-b border-gray-200 pb-2"><span className="font-bold text-gray-400">ยอดส่งต่องวด</span><span className="font-black text-emerald-600">฿{parseFloat(selectedLoan.pmt_amount).toLocaleString()}</span></div>
-                            <div className="flex justify-between pt-1"><span className="font-bold text-gray-400">เวลาส่ง</span><span className="font-black text-blue-600">{selectedLoan.payment_time}</span></div>
-                          </div>
-                          <button onClick={handleCopy} className="w-full mt-8 bg-slate-900 text-white rounded-2xl py-4 font-black flex items-center justify-center gap-3 transition-transform">{copying ? <Check size={20} className="text-emerald-400"/> : <Copy size={20}/>} คัดลอกสถานะปัจจุบัน</button>
-                        </div>
-                      </div>
-                      <div className="lg:col-span-2 bg-white rounded-[3rem] shadow-2xl p-10 border border-gray-50 relative overflow-hidden">
-                        <div className="flex justify-between items-center mb-8">
-                          <h3 className="text-2xl font-black text-gray-800 flex items-center gap-3"><CheckCircle className="text-emerald-500"/> ตารางเช็คยอดรายวัน</h3>
-                          <div className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full font-black text-sm">จ่ายแล้ว {selectedLoan.schedule.filter(s => s.status == 1).length} / {selectedLoan.schedule.length}</div>
-                        </div>
-                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-4">
-                          {selectedLoan.schedule.map((pmt) => (
-                            <button key={pmt.id} onClick={() => togglePayment(pmt.id, pmt.status)} className={`h-24 rounded-3xl flex flex-col items-center justify-center gap-2 transition-all group relative overflow-hidden ${pmt.status == 1 ? 'bg-emerald-500 text-white shadow-lg' : 'bg-gray-50 border-2 border-gray-100 hover:border-emerald-300'}`}>
-                              <span className={`text-xs font-black ${pmt.status == 1 ? 'text-white/70' : 'text-gray-300'}`}>งวด {pmt.period_num}</span>
-                              <span className="text-2xl">{pmt.status == 1 ? '✅' : '📍'}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {view === 'finance' && (
-                  <div className="space-y-8 animate-in fade-in">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                      <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-blue-50">
-                        <p className="text-[10px] font-black text-gray-400 uppercase mb-2">ต้นทุนหมุนเวียน</p>
-                        <p className="text-3xl font-black text-blue-600">฿{financeSummary?.active_capital.toLocaleString()}</p>
-                      </div>
-                      <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-emerald-50">
-                        <p className="text-[10px] font-black text-gray-400 uppercase mb-2">รายรับทั้งหมด (Gross)</p>
-                        <p className="text-3xl font-black text-emerald-600">฿{financeSummary?.total_revenue.toLocaleString()}</p>
-                      </div>
-                      <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-orange-50">
-                        <p className="text-[10px] font-black text-gray-400 uppercase mb-2">กำไรจากดอกเบี้ย</p>
-                        <p className="text-3xl font-black text-orange-500">฿{financeSummary?.interest_profit.toLocaleString()}</p>
-                      </div>
-                      <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-purple-50">
-                        <p className="text-[10px] font-black text-gray-400 uppercase mb-2">กำไรสุทธิ (P&L)</p>
-                        <p className={`text-3xl font-black ${financeSummary?.net_profit >= 0 ? 'text-purple-600' : 'text-red-600'}`}>฿{financeSummary?.net_profit.toLocaleString()}</p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                      <div className="lg:col-span-1 bg-white p-8 rounded-[3rem] shadow-xl border border-gray-50 h-fit">
-                        <h3 className="text-xl font-black text-gray-800 mb-6 flex items-center gap-2"><ArrowRight className="text-emerald-500"/> ลงบัญชีใหม่</h3>
+                      <div className="lg:col-span-1 bg-white rounded-3xl shadow-xl p-8 space-y-6">
+                        <h2 className="text-2xl font-bold flex items-center gap-2 border-b pb-4"><span className="text-emerald-600">📝</span> ข้อมูลผู้กู้</h2>
                         <div className="space-y-4">
-                          <div className="flex bg-gray-100 p-1 rounded-2xl">
-                            <button onClick={() => setNewTrans({...newTrans, type: 'income'})} className={`flex-1 py-3 rounded-xl font-bold transition-all ${newTrans.type === 'income' ? 'bg-white shadow text-emerald-600' : 'text-gray-400'}`}>รายรับ</button>
-                            <button onClick={() => setNewTrans({...newTrans, type: 'expense'})} className={`flex-1 py-3 rounded-xl font-bold transition-all ${newTrans.type === 'expense' ? 'bg-white shadow text-red-600' : 'text-gray-400'}`}>รายจ่าย</button>
+                          {[ {label: 'ชื่อผู้กู้', icon: <User size={12}/>, val: borrowerName, set: setBorrowerName, ph: 'ชื่อผู้กู้'}, {label: 'ยอดเงินกู้', icon: <DollarSign size={12}/>, val: principal, set: setPrincipal, type: 'number'} ].map((inp, idx) => (
+                            <div key={idx} className="space-y-1">
+                              <label className="text-xs font-black text-gray-400 uppercase flex items-center gap-2">{inp.icon} {inp.label}</label>
+                              <input type={inp.type || 'text'} value={inp.val} onChange={e => inp.set(e.target.value)} className="w-full px-5 py-4 rounded-2xl border-2 border-gray-100 focus:border-emerald-500 outline-none font-bold" placeholder={inp.ph}/>
+                            </div>
+                          ))}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-xs font-black text-gray-400 uppercase flex items-center gap-2"><Calendar size={12}/> ระยะเวลา</label>
+                              <div className="flex">
+                                <input type="number" value={duration} onChange={e => setDuration(e.target.value)} className="w-1/2 px-4 py-4 rounded-l-2xl border-2 border-gray-100 outline-none font-bold"/>
+                                <select value={durationUnit} onChange={e => setDurationUnit(e.target.value)} className="w-1/2 px-2 py-4 rounded-r-2xl border-2 border-l-0 border-gray-100 outline-none font-bold text-gray-600"><option value="day">วัน</option><option value="month">เดือน</option><option value="year">ปี</option></select>
+                              </div>
+                            </div>
+                            <div className="space-y-1"><label className="text-xs font-black text-gray-400 uppercase flex items-center gap-2"><Clock size={12}/> ส่งยอด</label><input type="time" value={paymentTime} onChange={e => setPaymentTime(e.target.value)} className="w-full px-4 py-4 rounded-2xl border-2 border-gray-100 outline-none font-bold"/></div>
                           </div>
-                          <input type="text" value={newTrans.category} onChange={(e) => setNewTrans({...newTrans, category: e.target.value})} className="w-full px-5 py-4 rounded-2xl border-2 border-gray-100 outline-none font-bold" placeholder="หมวดหมู่เช่น ค่าน้ำมัน, ค่าคอม"/>
-                          <input type="number" value={newTrans.amount} onChange={(e) => setNewTrans({...newTrans, amount: e.target.value})} className="w-full px-5 py-4 rounded-2xl border-2 border-gray-100 outline-none font-black text-xl" placeholder="จำนวนเงิน"/>
-                          <textarea value={newTrans.description} onChange={(e) => setNewTrans({...newTrans, description: e.target.value})} className="w-full px-5 py-4 rounded-2xl border-2 border-gray-100 outline-none" placeholder="รายละเอียดเพิ่มเติม (ไม่ระบุก็ได้)"/>
-                          <button onClick={handleAddTransaction} className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl hover:bg-black transition-all">บันทึกยอด</button>
+                          <button onClick={handleSaveLoan} disabled={!borrowerName || !results} className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black text-xl shadow-lg hover:-translate-y-1 transition-all disabled:opacity-30 active:scale-95 flex items-center justify-center gap-3"><Save size={24}/> บันทึกปล่อยกู้</button>
                         </div>
                       </div>
-
-                      <div className="lg:col-span-2 bg-white rounded-[3rem] shadow-xl border border-gray-50 overflow-hidden">
-                        <div className="p-8 border-b border-gray-50 font-black text-xl">ประวัติรายการบัญชี</div>
-                        <div className="overflow-x-auto max-h-[500px] overflow-y-auto scroll-thin">
-                          <table className="w-full text-left">
-                            <thead className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase">
-                              <tr>
-                                <th className="px-8 py-4">วันที่</th>
-                                <th className="px-8 py-4">ประเภท</th>
-                                <th className="px-8 py-4">หมวดหมู่</th>
-                                <th className="px-8 py-4 text-right">จำนวน</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50 text-sm font-bold">
-                              {transactions.map(t => (
-                                <tr key={t.id} className="hover:bg-gray-50 transition-colors">
-                                  <td className="px-8 py-5 text-gray-400">{new Date(t.transaction_date).toLocaleDateString('th-TH')}</td>
-                                  <td className="px-8 py-5">
-                                    <span className={`px-3 py-1 rounded-full text-[10px] ${t.type === 'income' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-                                      {t.type === 'income' ? 'รายรับ' : 'รายจ่าย'}
-                                    </span>
-                                  </td>
-                                  <td className="px-8 py-5 text-gray-700">{t.category}</td>
-                                  <td className={`px-8 py-5 text-right font-black ${t.type === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>
-                                    {t.type === 'income' ? '+' : '-'}฿{parseFloat(t.amount).toLocaleString()}
-                                  </td>
-                                </tr>
+                      <div className="lg:col-span-2 space-y-8">
+                        {results ? (
+                          <>
+                            <div className="grid grid-cols-3 gap-4">
+                              { [ {label: 'ยอดส่ง/งวด', val: results.pmt, color: 'emerald'}, {label: 'ดอกรวม', val: results.totalInterest, color: 'orange'}, {label: 'รวมต้นดอก', val: results.totalPayment, color: 'blue'}].map((card, i) => (
+                                <div key={i} className={`bg-white rounded-[2rem] p-6 shadow-xl border border-${card.color}-50 text-center`}>
+                                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{card.label}</p>
+                                  <p className={`text-3xl font-black text-${card.color}-600`}>฿{formatCurrency(card.val)}</p>
+                                </div>
                               ))}
-                            </tbody>
-                          </table>
-                        </div>
+                            </div>
+                            <div className="bg-slate-900 rounded-[2.5rem] p-8 shadow-2xl overflow-hidden text-slate-300">
+                               <div className="flex justify-between mb-6">
+                                <span className="text-emerald-400 text-xs font-black uppercase">Preview Mode</span>
+                                <button onClick={handleCopy} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-4 py-2 rounded-xl transition-all">{copying ? <Check size={16}/> : <Copy size={16}/>} {copying ? 'คัดลอกแล้ว' : 'คัดลอก'}</button>
+                               </div>
+                               <div className="bg-black/30 rounded-3xl p-8 font-mono max-h-[300px] overflow-y-auto whitespace-pre-wrap">{generateCopyText()}</div>
+                            </div>
+                          </>
+                        ) : <div className="bg-white/50 border-4 border-dashed rounded-[3rem] h-[400px] flex flex-col items-center justify-center text-gray-300 font-bold"><Calculator size={64} className="opacity-10 mb-4"/> กรอกข้อมูลเพื่อคำนวณ</div>}
                       </div>
                     </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        };
+                  )}
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<LoanCalculator />);
+                  {view === 'dashboard' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {savedLoans.map(loan => (
+                        <div key={loan.id} className="bg-white rounded-[2.5rem] shadow-xl p-8 border border-gray-50 flex flex-col hover:shadow-2xl transition-all">
+                          <div className="flex justify-between mb-6"><div><h3 className="text-2xl font-black text-gray-800">{loan.borrower_name}</h3><p className="text-xs font-bold text-emerald-600/60 uppercase">{new Date(loan.start_date).toLocaleDateString('th-TH')}</p></div><button onClick={() => deleteLoan(loan.id)} className="p-2 text-red-300 hover:text-red-500"><Trash2 size={20}/></button></div>
+                          <div className="bg-gray-50 rounded-2xl p-4 mb-6 grid grid-cols-2 gap-4"><div><p className="text-[10px] font-black text-gray-400">ต้นทุน</p><p className="font-black text-emerald-700">฿{parseFloat(loan.principal).toLocaleString()}</p></div><div><p className="text-[10px] font-black text-gray-400">ต่องวด</p><p className="font-black text-blue-600">฿{parseFloat(loan.pmt_amount).toLocaleString()}</p></div></div>
+                          <button onClick={() => loadLoanDetails(loan.id)} className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-emerald-600 transition-all">จัดการ <ChevronRight size={18}/></button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {view === 'tracker' && selectedLoan && (
+                    <div className="space-y-8">
+                       <button onClick={() => setView('dashboard')} className="flex items-center gap-2 font-black text-gray-400 hover:text-emerald-600"><ArrowLeft size={20}/> กลับหน้ารายการ</button>
+                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                         <div className="lg:col-span-1 bg-white rounded-[3rem] shadow-2xl p-8 border border-emerald-50 text-center">
+                            <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-600"><User size={48}/></div>
+                            <h2 className="text-3xl font-black">{selectedLoan.borrower_name}</h2>
+                            <div className="mt-6 space-y-3 bg-gray-50 rounded-[2rem] p-6 text-sm text-left">
+                                {[ {l:'ต้น',v:'฿'+parseFloat(selectedLoan.principal).toLocaleString()}, {l:'ส่งงวด',v:'฿'+parseFloat(selectedLoan.pmt_amount).toLocaleString(), c:'emerald'}, {l:'เวลา',v:selectedLoan.payment_time, c:'blue'}].map((item,i) => (
+                                    <div key={i} className="flex justify-between border-b pb-2"><span className="text-gray-400 font-bold">{item.l}</span><span className={`font-black text-${item.c||'gray'}-700`}>{item.v}</span></div>
+                                ))}
+                            </div>
+                            <button onClick={handleCopy} className="w-full mt-6 bg-slate-900 text-white rounded-2xl py-4 font-black flex items-center justify-center gap-2">{copying ? <Check size={20}/> : <Copy size={20}/>} คัดลอกสถานะ</button>
+                         </div>
+                         <div className="lg:col-span-2 bg-white rounded-[3rem] shadow-2xl p-10">
+                            <div className="flex justify-between mb-8"><h3 className="text-2xl font-black flex items-center gap-3 text-slate-800"><CheckCircle className="text-emerald-500"/> ตารางเช็คยอด</h3><div className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full font-black text-sm">{selectedLoan.schedule.filter(s=>s.status==1).length}/{selectedLoan.schedule.length}</div></div>
+                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-4">
+                                {selectedLoan.schedule.map(pmt => (
+                                    <button key={pmt.id} onClick={() => togglePayment(pmt.id, pmt.status)} className={`h-24 rounded-3xl flex flex-col items-center justify-center transition-all ${pmt.status==1 ? 'bg-emerald-500 text-white shadow-lg' : 'bg-gray-50 border-2 hover:border-emerald-300'}`}>
+                                        <span className={`text-[10px] font-black ${pmt.status==1?'text-white/70':'text-gray-300'}`}>งวด {pmt.period_num}</span>
+                                        <span className="text-2xl mt-1">{pmt.status==1?'✅':'📍'}</span>
+                                    </button>
+                                ))}
+                            </div>
+                         </div>
+                       </div>
+                    </div>
+                  )}
+
+                  {view === 'finance' && (
+                    <div className="space-y-8 animate-in fade-in">
+                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                         {[ {l:'ทุนหมุนเวียน', v:financeSummary?.active_capital, c:'blue'}, {l:'รายรับ (Gross)', v:financeSummary?.total_revenue, c:'emerald'}, {l:'กำไรดอก', v:financeSummary?.interest_profit, c:'orange'}, {l:'กำไรสุทธิ (P&L)', v:financeSummary?.net_profit, c:'purple'}].map((card, i) => (
+                           <div key={i} className={`bg-white p-8 rounded-[2.5rem] shadow-xl border border-${card.c}-50`}>
+                             <p className="text-[10px] font-black text-gray-400 uppercase mb-2">{card.l}</p>
+                             <p className={`text-3xl font-black text-${card.c}-600`}>฿{card.v?.toLocaleString()}</p>
+                           </div>
+                         ))}
+                       </div>
+                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                         <div className="lg:col-span-1 bg-white p-8 rounded-[3rem] shadow-xl space-y-4">
+                            <h3 className="text-xl font-black mb-4">📝 ลงบัญชีใหม่</h3>
+                            <div className="flex bg-gray-100 p-1 rounded-2xl mb-4">
+                                <button onClick={()=>setNewTrans({...newTrans, type:'income'})} className={`flex-1 py-3 rounded-xl font-bold ${newTrans.type==='income'?'bg-white shadow text-emerald-600':'text-gray-400'}`}>รายรับ</button>
+                                <button onClick={()=>setNewTrans({...newTrans, type:'expense'})} className={`flex-1 py-3 rounded-xl font-bold ${newTrans.type==='expense'?'bg-white shadow text-red-600':'text-gray-400'}`}>รายจ่าย</button>
+                            </div>
+                            <input type="text" value={newTrans.category} onChange={e=>setNewTrans({...newTrans, category:e.target.value})} className="w-full px-5 py-4 rounded-2xl border-2 outline-none font-bold mb-2" placeholder="หมวดหมู่เช่น ค่าน้ำมัน"/>
+                            <input type="number" value={newTrans.amount} onChange={e=>setNewTrans({...newTrans, amount:e.target.value})} className="w-full px-5 py-4 rounded-2xl border-2 outline-none font-black text-xl mb-4" placeholder="จำนวนเงิน"/>
+                            <button onClick={handleAddTransaction} className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl hover:bg-black transition-all">บันทึกยอด</button>
+                         </div>
+                         <div className="lg:col-span-2 bg-white rounded-[3rem] shadow-xl overflow-hidden">
+                            <div className="p-8 border-b font-black text-xl">ประวัติบัญชีล่าสุด</div>
+                            <div className="overflow-x-auto max-h-[500px] overflow-y-auto scroll-thin">
+                               <table className="w-full text-left">
+                                 <thead className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase"><tr><th className="px-8 py-4">วันที่</th><th className="px-8 py-4">ประเภท</th><th className="px-8 py-4">หมวดหมู่</th><th className="px-8 py-4 text-right">จำนวน</th></tr></thead>
+                                 <tbody className="divide-y text-sm font-bold">
+                                   {transactions.map(t => (
+                                     <tr key={t.id} className="hover:bg-gray-50 transition-colors">
+                                       <td className="px-8 py-5 text-gray-400">{new Date(t.transaction_date).toLocaleDateString('th-TH')}</td>
+                                       <td className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase">{t.type==='income'?'รายรับ':'รายจ่าย'}</td>
+                                       <td className="px-8 py-5 text-gray-700">{t.category}</td>
+                                       <td className={`px-8 py-5 text-right font-black ${t.type==='income'?'text-emerald-600':'text-red-600'}`}>฿{parseFloat(t.amount).toLocaleString()}</td>
+                                     </tr>
+                                   ))}
+                                 </tbody>
+                               </table>
+                            </div>
+                         </div>
+                       </div>
+                    </div>
+                  )}
+                </div>
+              );
+            };
+
+            const root = ReactDOM.createRoot(document.getElementById('root'));
+            root.render(<LoanCalculatorApp />);
+        } catch (err) {
+            document.getElementById('error-screen').style.display = 'block';
+            document.getElementById('error-message').textContent = err.stack || err;
+        }
     </script>
 </body>
 </html>
